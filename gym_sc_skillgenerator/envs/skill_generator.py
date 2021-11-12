@@ -79,16 +79,21 @@ class SkillGeneratorEnv(gym.GoalEnv):
 
             ob["achieved_goal"] = self._root.get_props().copy()
             ob["observation"]["current_node"] = NODE_CLS.index(self._root.__class__) + 1
-            ob["observation"]["selectable_nodes"] = current_node.get_compatible_outputs(NODE_CLS)
+            ob["observation"]["selectable_nodes"] = self.get_compatible_nodes()
             ob["observation"]["current_node_args"] = np.resize(np.array(current_node.get_args()), (MAX_NODE_ARGS,))
             ob["observation"]["siblings_count"] = len(current_node.output)
         return ob
 
+    def get_compatible_nodes(self):
+        if len(self._node_queue) == 0:
+            return self._get_triggers()
+        return self._node_queue[0].get_compatible_outputs(NODE_CLS)
+
     def step(self, action: dict):
         if action["skip_current"] > 0:
-            if len(self._node_queue):
+            if len(self._node_queue) > 0:
                 self._node_queue.pop(0)
-            else:
+            elif self._root is None:
                 self._invalid_actions += 1
         else:
             node_cls_id = int(action["new_node"])
@@ -98,9 +103,7 @@ class SkillGeneratorEnv(gym.GoalEnv):
 
             node_cls = NODE_CLS[node_cls_id]
 
-            if len(self._node_queue) == 0 and self._get_triggers()[node_cls_id] < 1:
-                self._invalid_actions += 1
-            elif len(self._node_queue) > 0 and self._node_queue[0].get_compatible_outputs(NODE_CLS)[node_cls_id] < 1:
+            if self.get_compatible_nodes()[node_cls_id] < 1:
                 self._invalid_actions += 1
             else:
                 # check node None?
@@ -118,7 +121,8 @@ class SkillGeneratorEnv(gym.GoalEnv):
 
         observe = self._observe()
         reward = self.compute_reward(achieved_goal=achieved_goal, desired_goal=self._expected_props, info={})
-        done = self._total_nodes >= MAX_NODES_COUNT
+        done = self._total_nodes >= MAX_NODES_COUNT or achieved_goal[0] > self._expected_props[0] or (
+                self._root is not None and len(self._node_queue) == 0)
         return observe, reward, done, {}
 
     def compute_reward(self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info):
@@ -163,13 +167,16 @@ class SkillGeneratorWrapper(gym.Wrapper):
             observation_space[k] = v
         self.observation_space = spaces.Dict(observation_space)
 
-        self.action_space = spaces.Box(low=-1, high=1, shape=(MAX_NODE_ARGS + 2,))
+        self.action_space = spaces.Box(low=-1, high=1, shape=(MAX_NODE_ARGS * NODE_CLS_LEN + NODE_CLS_LEN + 1,))
 
     def step(self, action: np.ndarray):
+        new_node_selection = action[1:1 + NODE_CLS_LEN]
+        new_node_idx = np.argmax(new_node_selection * self.env.get_compatible_nodes())
+        new_node_args = action[1 + NODE_CLS_LEN + new_node_idx * MAX_NODE_ARGS:][:MAX_NODE_ARGS]
         real_action = {
             "skip_current": action[0] > 0,
-            "new_node": min(int((action[1] / 2 + 0.5) * NODE_CLS_LEN), NODE_CLS_LEN - 1),
-            "node_args": (action[2:] + 1) / 2,
+            "new_node": new_node_idx,
+            "node_args": (new_node_args + 1) / 2,
         }
         observation, reward, done, info = super().step(real_action)
 

@@ -90,7 +90,7 @@ class SkillNode(ABC, metaclass=ABCMeta):
 
     def get_compatible_outputs(self, node_cls: list[Type[SkillNode]]):
         return np.array([(not node.get_configure().get("is_trigger", False)) and
-                         self.get_configure().get("allowed_output") ^ node.get_configure().get("allowed_output")
+                         self.get_configure().get("allowed_output") & node.get_configure().get("allowed_output")
                          for node in node_cls], dtype=np.int8)
 
     def get_args(self):
