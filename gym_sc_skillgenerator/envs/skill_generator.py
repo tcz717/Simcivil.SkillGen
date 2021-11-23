@@ -170,7 +170,7 @@ class SkillGeneratorWrapper(gym.Wrapper):
         self.action_space = spaces.Box(low=-1, high=1, shape=(MAX_NODE_ARGS * NODE_CLS_LEN + NODE_CLS_LEN + 1,))
 
     def step(self, action: np.ndarray):
-        new_node_selection = action[1:1 + NODE_CLS_LEN]
+        new_node_selection = action[1:1 + NODE_CLS_LEN] + 2 # ensure all are above 0
         new_node_idx = np.argmax(new_node_selection * self.env.get_compatible_nodes())
         new_node_args = action[1 + NODE_CLS_LEN + new_node_idx * MAX_NODE_ARGS:][:MAX_NODE_ARGS]
         real_action = {
