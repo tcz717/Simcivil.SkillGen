@@ -19,6 +19,7 @@ if __name__ == '__main__':
 
     obs = env.reset()
     print("training done")
+    reward = None
     for i in range(1000):
         action, _state = model.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(action)
@@ -27,5 +28,5 @@ if __name__ == '__main__':
 
     print(i)
     env.render()
-    obs = env.reset()
-    print(obs)
+    print(env.observe())
+    print(reward)

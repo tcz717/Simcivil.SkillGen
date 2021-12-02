@@ -59,9 +59,10 @@ class SkillGeneratorEnv(gym.GoalEnv):
     def _get_triggers():
         return np.array([node.get_configure().get("is_trigger") or 0 for node in NODE_CLS], dtype=np.int8)
 
-    def _observe(self):
+    def observe(self):
         ob = {
             "desired_goal": self._expected_props.copy(),
+            "achieved_goal": self._root.get_props().copy() if self._root else np.zeros(4),
             "observation": {
                 "nodes_count": self._total_nodes,
                 "invalid_actions": [self._invalid_actions]
@@ -69,7 +70,6 @@ class SkillGeneratorEnv(gym.GoalEnv):
         }
 
         if len(self._node_queue) == 0:
-            ob["achieved_goal"] = np.zeros(4)
             ob["observation"]["current_node"] = 0
             ob["observation"]["selectable_nodes"] = self._get_triggers()
             ob["observation"]["current_node_args"] = np.zeros(MAX_NODE_ARGS, dtype=np.int8)
@@ -77,7 +77,6 @@ class SkillGeneratorEnv(gym.GoalEnv):
         else:
             current_node = self._node_queue[0]
 
-            ob["achieved_goal"] = self._root.get_props().copy()
             ob["observation"]["current_node"] = NODE_CLS.index(self._root.__class__) + 1
             ob["observation"]["selectable_nodes"] = self.get_compatible_nodes()
             ob["observation"]["current_node_args"] = np.resize(np.array(current_node.get_args()), (MAX_NODE_ARGS,))
@@ -119,24 +118,28 @@ class SkillGeneratorEnv(gym.GoalEnv):
 
         achieved_goal = self._root.get_props().copy() if self._root else np.zeros(4)
 
-        observe = self._observe()
+        observe = self.observe()
         reward = self.compute_reward(achieved_goal=achieved_goal, desired_goal=self._expected_props, info={})
         done = self._total_nodes >= MAX_NODES_COUNT or achieved_goal[0] > self._expected_props[0] or (
                 self._root is not None and len(self._node_queue) == 0)
         return observe, reward, done, {}
 
     def compute_reward(self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info):
-        return -np.linalg.norm(achieved_goal - desired_goal) - self._invalid_actions
+        goal_diff = achieved_goal - desired_goal
+        goal_diff *= np.array([1000, 1, 1, 1])
+        if achieved_goal.sum() < 2:
+            return -1e10
+        return -np.linalg.norm(goal_diff) - self._invalid_actions * 1000.0
 
     def reset(self):
-        self._expected_props = SkillProperties.from_array(np.random.rand(4) * 10.0)
+        self._expected_props = SkillProperties.from_array(np.random.rand(4) * 10.0 + 1.0)
         self._next_node_id = 0
         self._root: Optional[SkillNode] = None
         self._total_nodes = 0
         self._invalid_actions = 0
         self._node_queue.clear()
 
-        return self._observe()
+        return self.observe()
 
     def render(self, mode="human"):
         dot = graphviz.Digraph()
@@ -170,7 +173,7 @@ class SkillGeneratorWrapper(gym.Wrapper):
         self.action_space = spaces.Box(low=-1, high=1, shape=(MAX_NODE_ARGS * NODE_CLS_LEN + NODE_CLS_LEN + 1,))
 
     def step(self, action: np.ndarray):
-        new_node_selection = action[1:1 + NODE_CLS_LEN] + 2 # ensure all are above 0
+        new_node_selection = action[1:1 + NODE_CLS_LEN] + 2  # ensure all are above 0
         new_node_idx = np.argmax(new_node_selection * self.env.get_compatible_nodes())
         new_node_args = action[1 + NODE_CLS_LEN + new_node_idx * MAX_NODE_ARGS:][:MAX_NODE_ARGS]
         real_action = {
@@ -193,3 +196,6 @@ class SkillGeneratorWrapper(gym.Wrapper):
         for k, v in observation["observation"].items():
             new_observation[k] = v
         return new_observation
+
+    def observe(self):
+        return self.env.observe()

@@ -81,7 +81,9 @@ class SkillNode(ABC, metaclass=ABCMeta):
         self._args = args
 
     def get_props(self) -> SkillProperties:
-        return self.sum_children_props()
+        props = self.sum_children_props()
+        props.complexity += 1
+        return props
 
     def sum_children_props(self):
         if len(self.output) == 0:
@@ -130,7 +132,7 @@ class EntityTargetTrigger(SkillNode):
 
 class CooldownCheck(SkillNode):
 
-    def __init__(self, node_id: int, cooldown=1.0, *_):
+    def __init__(self, node_id: int, cooldown, *_):
         super().__init__(node_id, cooldown)
         # Max cooldown 3 days
         self.cooldown = cooldown * MAX_COOLDOWN
