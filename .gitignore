@@ -1,2 +1,7 @@
 /Digraph.gv
 /Digraph.gv.pdf
+/venv/
+/.idea/
+*.pyc
+model.zip
+.vscode/settings.json

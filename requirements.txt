@@ -1,0 +1,5 @@
+setuptools~=57.0.0
+numpy~=1.19.5
+gym~=0.19.0
+graphviz~=0.17
+stable_baselines3

@@ -7,15 +7,17 @@ from stable_baselines3 import A2C
 from gym_sc_skillgenerator.envs.skill_generator import SkillGeneratorEnv, SkillGeneratorWrapper
 from stable_baselines3.common.env_checker import check_env
 
+from azureml.core import Run
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+    run = Run.get_context()
     env = SkillGeneratorWrapper(SkillGeneratorEnv())
-
-    # check_env(env)
-    # check_env(SkillGeneratorWrapper(env), skip_render_check=False)
 
     model = A2C('MultiInputPolicy', env, verbose=1)
     model.learn(total_timesteps=100000)
+
+    model.save("outputs/model")
 
     obs = env.reset()
     print("training done")
@@ -26,7 +28,7 @@ if __name__ == '__main__':
         if done:
             break
 
-    print(i)
-    env.render()
+    print("Total steps", i)
+    env.render(show=False)
     print(env.observe())
     print(reward)
