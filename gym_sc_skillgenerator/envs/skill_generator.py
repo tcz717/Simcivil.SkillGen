@@ -35,6 +35,8 @@ class SkillGeneratorEnv(gym.GoalEnv):
         self._expected_props = expected_props
         self._total_nodes = 0
         self._node_queue: list[SkillNode] = []
+        self._done = False
+        self._node_used = {k: 0 for k in range(NODE_CLS_LEN)}
 
         self.observation_space = spaces.Dict({
             "observation": spaces.Dict({
@@ -90,11 +92,15 @@ class SkillGeneratorEnv(gym.GoalEnv):
         return self._node_queue[0].get_compatible_outputs(NODE_CLS)
 
     def step(self, action: dict):
+        node_num_exceed_max_type = False
+        new_node_type = False
+        self._last_invalid_action = False
         if action["skip_current"] > 0:
             if len(self._node_queue) > 0:
                 self._node_queue.pop(0)
             elif self._root is None:
                 self._invalid_actions += 1
+                self._last_invalid_action = True
         else:
             node_cls_id = int(action["new_node"])
             args = np.array(action["node_args"])
@@ -105,6 +111,7 @@ class SkillGeneratorEnv(gym.GoalEnv):
 
             if self.get_compatible_nodes()[node_cls_id] < 1:
                 self._invalid_actions += 1
+                self._last_invalid_action = True
             else:
                 # check node None?
                 node = node_cls.from_args(self._next_node_id, args)
@@ -116,29 +123,55 @@ class SkillGeneratorEnv(gym.GoalEnv):
                     self._node_queue[0].output.append(node)
                 self._node_queue.append(node)
                 self._total_nodes += 1
+                new_node_type = self._node_used[node_cls_id] == 0
+                self._node_used[node_cls_id] += 1
+                node_num_exceed_max_type = self._node_used[node_cls_id] > 1
 
         achieved_goal = self._root.get_props().copy() if self._root else np.zeros(4)
 
+        info = {
+            "node_num_exceed_max_type": node_num_exceed_max_type,
+            "new_node_type": new_node_type
+        }
         observe = self.observe()
-        reward = self.compute_reward(achieved_goal=achieved_goal, desired_goal=self._expected_props, info={})
-        done = self._total_nodes >= MAX_NODES_COUNT or achieved_goal > self._expected_props * 1.1 or (
+        done = self._total_nodes >= MAX_NODES_COUNT or (achieved_goal > self._expected_props * 1.1).any() or (
                 self._root is not None and len(self._node_queue) == 0)
-        return observe, reward, done, {}
+        self._done = done
+        reward = self.compute_reward(achieved_goal=achieved_goal, desired_goal=self._expected_props, info=info)
+        return observe, reward, done, info
 
     def compute_reward(self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info):
-        goal_diff = achieved_goal - desired_goal
-        goal_diff *= np.array([1000, 1, 1, 1])
-        if achieved_goal.sum() < 1:
-            return -1e10
-        return -np.linalg.norm(goal_diff) - self._invalid_actions * 1000.0
+        reward = 0
+        if self._done:
+            goal_diff = achieved_goal - desired_goal
+            if achieved_goal.sum() <= 1:  # or (achieved_goal > 1.5 * desired_goal).any():
+                return -1e7
+            goal_diff *= np.array([1000, 800, 800, 800])
+            reward += -np.linalg.norm(goal_diff)
+
+        if self._last_invalid_action:
+            reward += -1000.0
+
+        if info["node_num_exceed_max_type"]:
+            reward += -1000.0
+
+        if info["new_node_type"]:
+            reward += 100.0
+
+        if len(self._node_queue) > 0 and len(self._node_queue[0].output) > 0:
+            reward += -100.0
+
+        return reward
 
     def reset(self):
-        self._expected_props = SkillProperties.from_array(np.random.rand(4) * 10.0 + 1.0)
+        self._expected_props = SkillProperties.from_array(np.random.rand(4) * [4, 10, 10, 10] + 1.0)
         self._next_node_id = 0
         self._root: Optional[SkillNode] = None
         self._total_nodes = 0
         self._invalid_actions = 0
+        self._done = False
         self._node_queue.clear()
+        self._node_used = {k: 0 for k in range(NODE_CLS_LEN)}
 
         return self.observe()
 

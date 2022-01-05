@@ -5,3 +5,4 @@
 *.pyc
 model.zip
 .vscode/settings.json
+outputs/*
